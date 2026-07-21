@@ -71,15 +71,24 @@ button.bad{color:var(--bad);border-color:#5b2c2c}
 .btns>button{flex:1;min-width:110px}
 table{width:100%;border-collapse:collapse;font-size:12px;table-layout:fixed}
 th{position:sticky;top:0;background:var(--panel2);text-align:left;
-  padding:9px 6px;font-size:10px;text-transform:uppercase;letter-spacing:.04em;
+  padding:8px 4px;font-size:9.5px;text-transform:uppercase;letter-spacing:.02em;
   color:var(--dim);border-bottom:1px solid var(--line);z-index:5;cursor:pointer;
   white-space:nowrap;user-select:none}
-th .arrow{opacity:.5;margin-left:2px;font-size:9px}
+th .arrow{opacity:.5;margin-left:1px;font-size:8px}
 th.active{color:var(--ink)}
 th.active .arrow{opacity:1;color:var(--accent)}
-td{padding:8px 6px;border-bottom:1px solid var(--line);vertical-align:top;
-  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.tablewrap{overflow-x:auto;border-radius:12px}
+td{padding:7px 4px;border-bottom:1px solid var(--line);vertical-align:middle;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11.5px}
+.tablewrap{overflow-x:hidden;border-radius:12px}
+/* Records column widths — mobile-first, Name gets the most room */
+#listHead th.bc, #tbody td.bc{width:19%}
+#listHead th.nm, #tbody td.nm{width:34%}
+#listHead th.ct, #tbody td.ct{width:13%}
+#listHead th.dt, #tbody td.dt{width:13%}
+#listHead th.tm, #tbody td.tm{width:13%}
+#listHead th.xcol, #tbody td.xcol{width:8%;text-align:center}
+td.xcol button{padding:3px 7px;font-size:12px;line-height:1;min-width:0}
+td.bc{font-size:10.5px}
 .mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px}
 .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:20px;z-index:50;
   background:#111;border:1px solid var(--line);border-radius:99px;padding:9px 16px;
@@ -180,11 +189,12 @@ small.hint{color:var(--dim);font-size:11px;display:block;margin-top:8px;line-hei
     <div class="tablewrap card" style="padding:0">
       <table>
         <thead><tr id="listHead">
-          <th data-k="barcode">Barcode<span class="arrow"></span></th>
-          <th data-k="name">Name<span class="arrow"></span></th>
-          <th data-k="cat">Cat<span class="arrow"></span></th>
-          <th data-k="date">Date<span class="arrow"></span></th>
-          <th></th>
+          <th data-k="barcode" class="bc">Barcode<span class="arrow"></span></th>
+          <th data-k="name" class="nm">Name<span class="arrow"></span></th>
+          <th data-k="cat" class="ct">Cat<span class="arrow"></span></th>
+          <th data-k="date" class="dt">Date<span class="arrow"></span></th>
+          <th class="tm">Time</th>
+          <th class="xcol"></th>
         </tr></thead>
         <tbody id="tbody"></tbody>
       </table>
@@ -228,6 +238,21 @@ let scanner=null, scanning=false;
 let sortKey='date', sortDir='asc';   // oldest -> newest by default
 
 const $=id=>document.getElementById(id);
+
+/* device string for 'Changed Using' */
+function deviceString(){
+  const ua=navigator.userAgent;
+  const m=ua.match(/Android[^;]*;\s*([^;)]+?)(?:\s+Build)?[;)]/);
+  if(m) return m[1].trim()+' (Android)';
+  if(/iPhone/.test(ua)) return 'iPhone (iOS)';
+  if(/iPad/.test(ua))   return 'iPad (iPadOS)';
+  const br=ua.match(/(Edg|Chrome|Firefox|Safari)\/(\d+)/);
+  const os=/Windows/.test(ua)?'Windows':/Mac OS X/.test(ua)?'macOS':/Linux/.test(ua)?'Linux':'Unknown';
+  const name={Edg:'Edge',Chrome:'Chrome',Firefox:'Firefox',Safari:'Safari'}[br?.[1]]||'Browser';
+  return `${name} ${br?br[2]:''} (${os})`.replace(/\s+/g,' ');
+}
+const DEVICE=deviceString();
+
 const save=()=>{localStorage.setItem(LS_REC,JSON.stringify(records));
                 localStorage.setItem(LS_PROD,JSON.stringify(products));
                 $('cntPill').textContent=records.length;};
@@ -300,7 +325,12 @@ function commit(){
 
   const now=new Date();
   for(let k=0;k<n;k++){
-    records.unshift({ barcode:bc, name, cat, date: now.toISOString() });
+    records.unshift({
+      change:'add', barcode:bc, name, desc:'', qty:'', cat, notes:'', loc:'',
+      date: now.toISOString(),      // time of scan
+      by:'', on: now.toISOString(), // Changed On = same scan moment
+      using: DEVICE
+    });
   }
   products[bc]={ name, cat, count:(products[bc]?.count||0)+n };
 
@@ -333,9 +363,10 @@ function addToLookupFromForm(){
 /* ============================================================
    RENDER — RECORDS
    ============================================================ */
-const fmt=d=>{const x=new Date(d);const p=n=>String(n).padStart(2,'0');
-  return `${p(x.getDate())}/${p(x.getMonth()+1)}/${x.getFullYear()} `+
-         `${p(x.getHours())}:${p(x.getMinutes())}`;};
+const fmtDate=d=>{const x=new Date(d);const p=n=>String(n).padStart(2,'0');
+  return `${p(x.getDate())}/${p(x.getMonth()+1)}`;};
+const fmtTime=d=>{const x=new Date(d);const p=n=>String(n).padStart(2,'0');
+  return `${p(x.getHours())}:${p(x.getMinutes())}`;};
 
 function sortedRecords(){
   const arr=[...records];
@@ -362,14 +393,15 @@ function renderRecords(){
   });
 
   const arr=sortedRecords();
-  // map back to original index for delete
   $('tbody').innerHTML=arr.map(r=>{
     const i=records.indexOf(r);
     return `<tr>
-      <td class="mono">${r.barcode}</td><td>${r.name||''}</td>
-      <td>${(r.cat||'').replace('Category ','C')}</td>
-      <td class="mono">${fmt(r.date)}</td>
-      <td><button class="ghost" style="padding:4px 8px" onclick="del(${i})">×</button></td>
+      <td class="mono bc">${r.barcode}</td>
+      <td class="nm">${r.name||''}</td>
+      <td class="ct">${(r.cat||'').replace('Category ','C')}</td>
+      <td class="mono dt">${fmtDate(r.date)}</td>
+      <td class="mono tm">${fmtTime(r.date)}</td>
+      <td class="xcol"><button class="ghost" onclick="del(${i})">×</button></td>
     </tr>`;
   }).join('');
 }
@@ -395,23 +427,33 @@ window.delProd=bc=>{ if(confirm('Remove '+bc+' from lookup?')){delete products[b
 function exportXlsx(){
   if(!records.length){ toast('Nothing to export'); return; }
   const rows=sortedRecords().map(r=>({
-    'Barcode' : r.barcode,
-    'Name'    : r.name || '',
-    'Category': r.cat || '',
-    'Date'    : new Date(r.date)
+    'Change'       : r.change || 'add',
+    'Barcode'      : r.barcode,
+    'Name'         : r.name || '',
+    'Description'  : r.desc || '',
+    'Quantity'     : r.qty ?? '',
+    'Category'     : r.cat || '',
+    'Notes'        : r.notes || '',
+    'Location'     : r.loc || '',
+    'Date'         : new Date(r.date),
+    'Changed By'   : r.by || '',
+    'Changed On'   : new Date(r.on || r.date),
+    'Changed Using': r.using || ''
   }));
-  const ws=XLSX.utils.json_to_sheet(rows,{cellDates:true,
-    header:['Barcode','Name','Category','Date']});
-  ws['!cols']=[{wch:16},{wch:30},{wch:12},{wch:20}];
+  const HDR=['Change','Barcode','Name','Description','Quantity','Category',
+             'Notes','Location','Date','Changed By','Changed On','Changed Using'];
+  const ws=XLSX.utils.json_to_sheet(rows,{cellDates:true,header:HDR});
+  ws['!cols']=[{wch:9},{wch:36},{wch:29},{wch:14},{wch:11},{wch:13},
+               {wch:8},{wch:25},{wch:27},{wch:24},{wch:27},{wch:27}];
   const R=XLSX.utils.decode_range(ws['!ref']);
-  for(let r=1;r<=R.e.r;r++){
-    const cell=ws[XLSX.utils.encode_cell({r,c:3})];
-    if(cell) cell.z='dd/mm/yyyy hh:mm:ss';
+  for(let r=1;r<=R.e.r;r++) for(const c of [8,10]){
+    const cell=ws[XLSX.utils.encode_cell({r,c})];
+    if(cell) cell.z='yyyy.mm.dd hh:mm:ss';
   }
   const wb=XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb,ws,'Records');
+  XLSX.utils.book_append_sheet(wb,ws,'sample in');
   const stamp=new Date().toISOString().slice(0,19).replace(/[:T]/g,'');
-  XLSX.writeFile(wb,`export_${stamp}.xlsx`);
+  XLSX.writeFile(wb,`sample_in_History_${stamp}.xlsx`);
   toast('Exported '+rows.length+' rows');
 }
 
