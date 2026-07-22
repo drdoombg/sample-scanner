@@ -270,6 +270,9 @@ small.hint{color:var(--dim);font-size:11px;display:block;margin-top:8px;line-hei
     <div class="btns" style="margin-top:12px">
       <button class="bad" id="btnWipe">Delete all records</button>
     </div>
+    <div class="btns" style="margin-top:8px">
+      <button class="ghost" id="btnHourOffset">Add 1 hour</button>
+    </div>
   </section>
 
   <!-- ===== PRODUCTS VIEW ===== -->
@@ -443,11 +446,25 @@ function addToLookupFromForm(){
 }
 
 /* ============================================================
+   HOUR OFFSET — a display/export-only shift, toggled on/off.
+   Does NOT touch the stored record.date; it's applied at read time
+   everywhere a time is shown or exported, so toggling it is instant
+   and reversible with no risk to the underlying data.
+   ============================================================ */
+const HOUR_OFFSET_KEY='scanner.hourOffsetOn';
+let hourOffsetOn = localStorage.getItem(HOUR_OFFSET_KEY)==='1';
+const withOffset=d=>{
+  const x=new Date(d);
+  if(hourOffsetOn) x.setHours(x.getHours()+1);
+  return x;
+};
+
+/* ============================================================
    RENDER — RECORDS
    ============================================================ */
-const fmtDate=d=>{const x=new Date(d);const p=n=>String(n).padStart(2,'0');
+const fmtDate=d=>{const x=withOffset(d);const p=n=>String(n).padStart(2,'0');
   return `${p(x.getDate())}/${p(x.getMonth()+1)}`;};
-const fmtTime=d=>{const x=new Date(d);const p=n=>String(n).padStart(2,'0');
+const fmtTime=d=>{const x=withOffset(d);const p=n=>String(n).padStart(2,'0');
   return `${p(x.getHours())}:${p(x.getMinutes())}`;};
 
 function sortedRecords(){
@@ -517,9 +534,9 @@ function exportXlsx(){
     'Category'     : r.cat || '',
     'Notes'        : r.notes || '',
     'Location'     : r.loc || '',
-    'Date'         : new Date(r.date),
+    'Date'         : withOffset(r.date),
     'Changed By'   : r.by || '',
-    'Changed On'   : new Date(r.on || r.date),
+    'Changed On'   : withOffset(r.on || r.date),
     'Changed Using': r.using || ''
   }));
   const HDR=['Change','Barcode','Name','Description','Quantity','Category',
@@ -575,6 +592,27 @@ $('btnExpProd').onclick=exportProducts;
 $('btnImpProd').onclick=()=>$('fileProd').click();
 $('btnWipe').onclick=()=>{ if(confirm('Delete ALL records? Products are kept.'))
   {records=[];save();renderRecords();} };
+
+function updateHourOffsetBtn(){
+  const b=$('btnHourOffset');
+  if(hourOffsetOn){
+    b.textContent='Add 1 hour: ON';
+    b.style.borderColor='var(--accent)';
+    b.style.color='var(--accent)';
+  }else{
+    b.textContent='Add 1 hour';
+    b.style.borderColor='';
+    b.style.color='';
+  }
+}
+$('btnHourOffset').onclick=()=>{
+  hourOffsetOn=!hourOffsetOn;
+  localStorage.setItem(HOUR_OFFSET_KEY, hourOffsetOn?'1':'0');
+  updateHourOffsetBtn();
+  renderRecords();
+  toast(hourOffsetOn?'Times shifted +1 hour':'Times back to normal');
+};
+updateHourOffsetBtn();
 
 $('fBarcode').addEventListener('change',e=>{ if(e.target.value.trim()) fill(e.target.value.trim()); });
 $('fBarcode').addEventListener('keydown',e=>{ if(e.key==='Enter') fill(e.target.value.trim()); });
